@@ -218,6 +218,20 @@ jobs:
             echo "::group::fs/proc/base.c context"
             sed -n '1,180p' fs/proc/base.c
             echo "::endgroup::"
+            if [ -f fs/proc/base.c.rej ] && ! grep -q 'linux/susfs_def.h' fs/proc/base.c; then
+              echo "Applying manual susfs_def.h include fix for fs/proc/base.c"
+              awk '{
+                print
+                if ($0 == "#include <linux/dma-buf.h>") {
+                  print "#if defined(CONFIG_KSU_SUSFS_SUS_MAP) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)"
+                  print "#include <linux/susfs_def.h>"
+                  print "#endif // #if defined(CONFIG_KSU_SUSFS_SUS_MAP) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)"
+                  print ""
+                }
+              }' fs/proc/base.c > fs/proc/base.c.tmp
+              mv fs/proc/base.c.tmp fs/proc/base.c
+              rm -f fs/proc/base.c.rej
+            fi
           fi
           echo "完成"
 
