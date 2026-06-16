@@ -211,7 +211,14 @@ jobs:
           fi
 
           cd ./common
-          patch -p1 < 50_add_susfs_in_gki-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}.patch || true
+          patch -p1 < 50_add_susfs_in_gki-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}.patch || PATCH_STATUS=$?
+          if [ -n "${PATCH_STATUS:-}" ]; then
+            echo "::warning::SUSFS patch returned ${PATCH_STATUS}; printing reject files and continuing for diagnosis"
+            find . -name '*.rej' -print -exec sed -n '1,220p' {} \;
+            echo "::group::fs/proc/base.c context"
+            sed -n '1,180p' fs/proc/base.c
+            echo "::endgroup::"
+          fi
           echo "完成"
 
       - name: Apply Hide Stuff Patches
@@ -318,7 +325,24 @@ jobs:
         if: ${{ github.event.inputs.CPU == 'sm8650' || github.event.inputs.CPU == 'sm7675' }}
         run: |
           cd kernel_workspace
+          echo "::group::runner diagnostics before build"
+          date
+          free -h || true
+          df -h || true
+          nproc || true
+          echo "::endgroup::"
+          (
+            while true; do
+              echo "build still running: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+              free -h | sed -n '1,3p' || true
+              df -h . | tail -n 1 || true
+              sleep 60
+            done
+          ) &
+          KEEPALIVE_PID=$!
+          trap 'kill "$KEEPALIVE_PID" 2>/dev/null || true' EXIT
           ./kernel_platform/build_with_bazel.py -t ${{ github.event.inputs.CPUD }} ${{ github.event.inputs.BUILD_METHOD }}
+          kill "$KEEPALIVE_PID" 2>/dev/null || true
           
       - name: Fallback build kernel
         if: ${{ github.event.inputs.CPU != 'sm8650' && github.event.inputs.CPU != 'sm7675' }}
